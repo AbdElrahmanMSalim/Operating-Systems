@@ -11,22 +11,25 @@
 int background;
 int bgp=0,done=0;
 
+void error_massage(){
+     printf("Please Enter A Valid Shell Command\n");
+}
 
 void remove_end_line(char line[]){
     int i =0;
-    while(line[i] != '\n' && line[i] != '>')
+    while(line[i] != '\n' && line[i] != '>' && line[i] != '<' && line[i] != '|')
         i++;
 
     line[i] = '\0';
 }
 
-int detect_redirection(char line[], char file_name[]){
+int detect_redirection(char line[], char redirection_line[]){
     int i = 0;
     int ret;
-    while (line[i] != NULL && line[i] != '>' && line[i] != '<')
+    while (line[i] != '\0' && line[i] != '>' && line[i] != '<' && line[i] != '|')
         i++;
 
-    if (line [i] == NULL)
+    if (line [i] == '\0')
         return -1;
     if (line[i] == '>'){
         if(line[i+1] == '>'){
@@ -36,27 +39,30 @@ int detect_redirection(char line[], char file_name[]){
         else
             ret = 1;
     }
-    else
+    else if (line[i] == '<')
         ret = 0;
+    else
+        ret = 3;
+
     i++;
     int j = 0;
     while (line [i] == ' ')
         i++;
-    while (line[i] != NULL){
-        file_name[j] = line[i];
+    while (line[i] != '\0'){
+        redirection_line[j] = line[i];
         i++;
         j++;
     }
-
-    file_name[j-1] = NULL;
+    redirection_line[j-1] = '\0';
 
     return ret;
 }
+
 // reading shell command line
-int read_line(char line[], char file_name[]){
+int read_line(char line[], char redirection_line[]){
     int i=0;
     char* command=fgets(line,MAX_LINE,stdin);
-    int ret = detect_redirection(line,file_name);
+    int ret = detect_redirection(line, redirection_line);
     while(line[i]!='\n')
     i++;
     if(line[i-1]=='&'){
@@ -85,7 +91,6 @@ int split_line(char line[],char* args[]){
     {
         i++;
         args[i] = strtok(NULL," ");
-
     }
     return 1;
 }
@@ -94,11 +99,12 @@ int split_line(char line[],char* args[]){
 int main()
 {
 
-    char line[20], file_name[25];
+    char line[200], redirection_line[100];
     char * args[20];
+    char * pipe_args[20];
     while(1){
         printf("sish:> ");
-        int ret= read_line(line,file_name);
+        int ret= read_line(line, redirection_line);
         split_line(line,args);  // parsing the line
 
         // execute the parsing line
@@ -110,41 +116,64 @@ int main()
                 if(waitpid(-1,NULL,WNOHANG) &&bgp>1){
                     done++;
                     printf("[%d] Done\n",done);
+                }
+                background=0;
+                continue;
             }
-            background=0;
-            continue;
-        }
-        else if(waitpid(-1,NULL,WNOHANG) &&done<bgp){
-            done++;
-            printf("[%d]+Done\n",done);
-            if(done==bgp){
-                done=0;
-                bgp=0;
+            else if(waitpid(-1,NULL,WNOHANG) &&done<bgp){
+                done++;
+                printf("[%d]+Done\n",done);
+                if(done==bgp){
+                    done=0;
+                    bgp=0;
+                }
             }
+            else
+                waitpid(child_pid,NULL,0);
         }
-        else
-            waitpid(child_pid,NULL,0);
-         }
         else if(child_pid == 0){
-            char* file_status;
+
+            if (ret == 3){
+                pid_t pipe_child_pid = fork();
+
+                if(pipe_child_pid == 0){
+                    dup2( open("pipeline", O_RDWR | O_TRUNC | O_CREAT, 777), 1);
+                    int err = execvp(args[0],args);
+                    if (err == -1)
+                        error_massage();
+                }
+                else{
+                    waitpid(pipe_child_pid,NULL,0);
+                    split_line(redirection_line, args);
+                    dup2( open("pipeline", O_RDONLY, 777), 0);
+                    int err = execvp(args[0],args);
+                    if (err == -1)
+                        error_massage();
+                }
+//                char * rmv_pipe[] = { "rm", "pipeline\0"};
+//                execvp("rm", rmv_pipe);
+                exit(0);
+            }
+
             if (ret != -1){
                 int file;
                 if(ret == 2){
-                    file = open(file_name, O_RDWR | O_APPEND | O_CREAT,0777);
+                    file = open(redirection_line, O_RDWR | O_APPEND | O_CREAT, 777);
                     ret = 1;
                 }
-                else
-                    file = open(file_name, O_RDWR | O_TRUNC | O_CREAT,0777);
-
+                else if (ret == 1)
+                    file = open(redirection_line, O_RDWR | O_TRUNC | O_CREAT, 777);
+                else if(ret == 0)
+                    file = open(redirection_line, O_RDONLY | O_CREAT, 777);
                 dup2(file, ret);
             }
-            int a = execvp(args[0],args);
-            if(a == -1){
-                 printf("Please Enter A Valid Shell Command\n");
+            if(ret != 3){
+                int err = execvp(args[0], args);
+                if(err == -1)
+                     error_massage();
+
             }
         }
-
-
     }
 
 
