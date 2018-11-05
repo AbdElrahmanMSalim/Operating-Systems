@@ -163,7 +163,8 @@ void piping(char line[]){
             int err = execvp(args[0],args);
             if (err == -1){
                 error_massage();
-//                exit(0);
+                remove_piping_files();
+                exit(0);
             }
         }
         else {
@@ -181,7 +182,8 @@ void piping(char line[]){
                     int err = execvp(args[0],args);
                     if (err == -1){
                         error_massage();
-//                        exit(0);
+                        remove_piping_files();
+                        exit(0);
                     }
                 }
                 else{
@@ -230,7 +232,7 @@ int main()
 
             else if(waitpid(-1, NULL, WNOHANG) && done < background_process){
                 done++;
-                printf("[%d]+Done\n",done);
+                printf("[%d]+Done\n", done);
                 if(done == background_process){
                     done = 0;
                     background_process = 0;
